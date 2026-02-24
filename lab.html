@@ -1,0 +1,2499 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Race Condition Lab</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg:       #080b10;
+    --surface:  #0d1117;
+    --panel:    #111820;
+    --border:   #1e2d3d;
+    --accent:   #00d4ff;
+    --accent2:  #ff4757;
+    --accent3:  #2ed573;
+    --warn:     #ffa502;
+    --text:     #c9d1d9;
+    --text-dim: #586069;
+    --text-hi:  #f0f6fc;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui:   'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── GRID BACKGROUND ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(8,11,16,0.95);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: var(--font-ui);
+    font-weight: 800;
+    font-size: 16px;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+
+  .logo span { color: var(--text-dim); font-weight: 400; }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .badge-lab    { background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.2); }
+  .badge-vuln   { background: rgba(255,71,87,0.1); color: var(--accent2); border: 1px solid rgba(255,71,87,0.2); }
+  .badge-secure { background: rgba(46,213,115,0.1); color: var(--accent3); border: 1px solid rgba(46,213,115,0.2); }
+  .badge-warn   { background: rgba(255,165,2,0.1); color: var(--warn); border: 1px solid rgba(255,165,2,0.2); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 8px var(--accent3);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── LAYOUT ── */
+  .shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    height: calc(100vh - 52px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto;
+    padding: 16px 0;
+  }
+
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-section {
+    padding: 0 16px 8px;
+    margin-bottom: 4px;
+  }
+
+  .sidebar-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 8px 6px;
+    display: block;
+  }
+
+  .lab-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 12px;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+    margin-bottom: 2px;
+    user-select: none;
+  }
+
+  .lab-item:hover {
+    background: var(--panel);
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  .lab-item.active {
+    background: rgba(0,212,255,0.06);
+    color: var(--accent);
+    border-color: rgba(0,212,255,0.2);
+  }
+
+  .lab-item .item-icon {
+    width: 28px; height: 28px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .item-icon.vuln-icon  { background: rgba(255,71,87,0.1); }
+  .item-icon.secure-icon{ background: rgba(46,213,115,0.1); }
+
+  .lab-item-meta { flex: 1; min-width: 0; }
+  .lab-item-name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lab-item-type { font-size: 10px; opacity: 0.6; }
+
+  /* ── MAIN ── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 16px;
+    gap: 0;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    padding: 12px 18px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── CONTENT AREA ── */
+  .content-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  .content-area::-webkit-scrollbar { width: 6px; }
+  .content-area::-webkit-scrollbar-track { background: transparent; }
+  .content-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── LAB PANEL ── */
+  .lab-panel { display: none; }
+  .lab-panel.active { display: block; }
+
+  .lab-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+  }
+
+  .lab-title {
+    font-family: var(--font-ui);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-hi);
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+
+  .lab-desc {
+    color: var(--text-dim);
+    font-size: 12px;
+    max-width: 600px;
+    line-height: 1.7;
+  }
+
+  .lab-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+  /* ── TWO-COLUMN GRID ── */
+  .lab-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .lab-grid.single { grid-template-columns: 1fr; }
+  .lab-grid.three  { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .card-body { padding: 16px; }
+
+  /* ── CODE BLOCK ── */
+  .code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: auto;
+    font-size: 11.5px;
+    line-height: 1.7;
+  }
+
+  .code-block::-webkit-scrollbar { height: 4px; }
+  .code-block::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .code-lang {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .code-copy {
+    font-size: 10px;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    font-family: var(--font-mono);
+    transition: all 0.15s;
+  }
+
+  .code-copy:hover { color: var(--accent); border-color: var(--accent); }
+
+  pre { padding: 14px 16px; overflow: auto; }
+
+  /* Syntax highlight */
+  .kw  { color: #ff7b72; }
+  .fn  { color: #d2a8ff; }
+  .str { color: #a5d6ff; }
+  .cm  { color: #8b949e; font-style: italic; }
+  .num { color: #79c0ff; }
+  .cls { color: #ffa657; }
+  .dec { color: #e3b341; }
+  .hi  { background: rgba(255,71,87,0.12); display: inline-block; width: 100%; border-left: 2px solid var(--accent2); padding-left: 4px; margin-left: -6px; }
+  .hi-ok { background: rgba(46,213,115,0.08); display: inline-block; width: 100%; border-left: 2px solid var(--accent3); padding-left: 4px; margin-left: -6px; }
+
+  /* ── FORM CONTROLS ── */
+  .form-row {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .form-row-2 { grid-template-columns: 1fr 1fr; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus, select:focus { border-color: var(--accent); }
+
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 4px;
+  }
+
+  .range-val {
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: #33dcff; }
+  .btn-primary:active { transform: scale(0.98); }
+
+  .btn-danger {
+    background: rgba(255,71,87,0.1);
+    color: var(--accent2);
+    border-color: rgba(255,71,87,0.3);
+  }
+  .btn-danger:hover { background: rgba(255,71,87,0.2); }
+
+  .btn-success {
+    background: rgba(46,213,115,0.1);
+    color: var(--accent3);
+    border-color: rgba(46,213,115,0.3);
+  }
+  .btn-success:hover { background: rgba(46,213,115,0.2); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border-color: var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* ── TERMINAL / LOG ── */
+  .terminal {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.6;
+    overflow: hidden;
+  }
+
+  .terminal-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .terminal-dots { display: flex; gap: 6px; }
+  .terminal-dots span {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .dot-r { background: #ff5f56; }
+  .dot-y { background: #ffbd2e; }
+  .dot-g { background: #27c93f; }
+
+  .terminal-title { font-size: 11px; color: var(--text-dim); }
+
+  .terminal-body {
+    padding: 12px 14px;
+    min-height: 180px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-size: 11.5px;
+  }
+
+  .terminal-body::-webkit-scrollbar { width: 4px; }
+  .terminal-body::-webkit-scrollbar-thumb { background: #1e2d3d; }
+
+  .log-line { margin-bottom: 2px; line-height: 1.5; }
+  .log-time { color: #586069; }
+  .log-ok   { color: var(--accent3); }
+  .log-err  { color: var(--accent2); }
+  .log-info { color: var(--accent); }
+  .log-warn { color: var(--warn); }
+  .log-dim  { color: #586069; }
+
+  /* ── METRICS GRID ── */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+
+  .metric-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-hi);
+    font-family: var(--font-ui);
+    line-height: 1;
+  }
+
+  .metric-value.ok   { color: var(--accent3); }
+  .metric-value.err  { color: var(--accent2); }
+  .metric-value.info { color: var(--accent); }
+  .metric-value.warn { color: var(--warn); }
+
+  .metric-sub { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+
+  /* ── ALERT BOX ── */
+  .alert {
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 12px;
+    margin-bottom: 12px;
+    border-left: 3px solid;
+    line-height: 1.6;
+  }
+
+  .alert-vuln   { background: rgba(255,71,87,0.06); border-color: var(--accent2); color: #ff8a96; }
+  .alert-secure { background: rgba(46,213,115,0.06); border-color: var(--accent3); color: #7ee8a2; }
+  .alert-info   { background: rgba(0,212,255,0.06); border-color: var(--accent); color: #7dd3fc; }
+  .alert-warn   { background: rgba(255,165,2,0.06); border-color: var(--warn); color: #fcd34d; }
+
+  .alert strong { display: block; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* ── STATE VISUALIZER ── */
+  .state-viz {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+
+  .state-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .state-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .state-key {
+    width: 130px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  .state-val {
+    font-weight: 600;
+    color: var(--text-hi);
+    transition: color 0.3s;
+  }
+
+  .state-val.changed { color: var(--warn); animation: flash 0.6s; }
+  .state-val.inc     { color: var(--accent3); }
+  .state-val.vuln    { color: var(--accent2); }
+
+  @keyframes flash { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent3);
+    border-radius: 2px;
+    transition: width 0.5s ease, background 0.3s;
+  }
+
+  .progress-fill.danger { background: var(--accent2); }
+  .progress-fill.warn   { background: var(--warn); }
+
+  /* ── TIMELINE ── */
+  .timeline {
+    position: relative;
+    padding: 8px 0;
+  }
+
+  .timeline-track {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 6px;
+  }
+
+  .tl-block {
+    height: 24px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 600;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    cursor: default;
+  }
+
+  .tl-block.success { background: rgba(46,213,115,0.2); color: var(--accent3); border: 1px solid rgba(46,213,115,0.3); }
+  .tl-block.failed  { background: rgba(255,71,87,0.1); color: var(--accent2); border: 1px solid rgba(255,71,87,0.2); }
+  .tl-block.racing  { background: rgba(255,165,2,0.2); color: var(--warn); border: 1px solid rgba(255,165,2,0.4); }
+  .tl-block.pending { background: var(--border); color: var(--text-dim); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── TABLE ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+
+  .data-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(30,45,61,0.5);
+    color: var(--text);
+    vertical-align: middle;
+  }
+
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* ── COMPARE PANEL ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .compare-col { overflow: hidden; }
+  .compare-col:first-child { border-right: 1px solid var(--border); }
+
+  .compare-header {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .compare-header.vuln   { background: rgba(255,71,87,0.08); color: var(--accent2); border-bottom: 1px solid rgba(255,71,87,0.2); }
+  .compare-header.secure { background: rgba(46,213,115,0.08); color: var(--accent3); border-bottom: 1px solid rgba(46,213,115,0.2); }
+
+  /* ── STEP COUNTER ── */
+  .steps { display: flex; flex-direction: column; gap: 8px; }
+
+  .step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .step-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step.active .step-num { background: var(--accent); color: var(--bg); }
+  .step.vuln  .step-num  { background: var(--accent2); color: #fff; }
+  .step.done  .step-num  { background: var(--accent3); color: var(--bg); }
+
+  .step-content { flex: 1; }
+  .step-title { font-weight: 600; color: var(--text-hi); margin-bottom: 2px; }
+  .step-detail { color: var(--text-dim); font-size: 11px; }
+
+  /* ── WINDOW VISUALIZER ── */
+  .window-viz {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    height: 48px;
+    margin-bottom: 8px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .wv-check {
+    background: rgba(0,212,255,0.1);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 2;
+    border-right: 1px solid var(--border);
+    letter-spacing: 0.05em;
+  }
+
+  .wv-window {
+    background: rgba(255,71,87,0.12);
+    color: var(--accent2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 3;
+    border-right: 1px solid var(--border);
+    letter-spacing: 0.05em;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .wv-window::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(255,71,87,0.06) 4px,
+      rgba(255,71,87,0.06) 8px
+    );
+  }
+
+  .wv-use {
+    background: rgba(46,213,115,0.1);
+    color: var(--accent3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 2;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── HOME PANEL ── */
+  .home-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .home-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .home-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .home-card.c1::before { background: var(--accent2); }
+  .home-card.c2::before { background: var(--accent); }
+  .home-card.c3::before { background: var(--accent3); }
+  .home-card.c4::before { background: var(--warn); }
+  .home-card.c5::before { background: #d2a8ff; }
+  .home-card.c6::before { background: #ffa657; }
+
+  .home-card:hover {
+    border-color: rgba(0,212,255,0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .home-card-icon { font-size: 24px; margin-bottom: 12px; }
+  .home-card-title { font-family: var(--font-ui); font-size: 14px; font-weight: 700; color: var(--text-hi); margin-bottom: 6px; }
+  .home-card-desc { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+  .home-card-cwe { font-size: 10px; color: var(--text-dim); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 1100px) {
+    .metrics { grid-template-columns: repeat(2,1fr); }
+    .home-grid { grid-template-columns: repeat(2,1fr); }
+    .lab-grid.three { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ── ANIMATIONS ── */
+  .fade-in { animation: fadeIn 0.3s ease forwards; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  .blink { animation: blink 1s step-end infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">H4ck The World</div>
+    <span class="badge badge-lab">Race Condition Lab v1.0</span>
+  </div>
+  <div class="topbar-right">
+    <div class="status-dot"></div>
+    <span>Lab environment active</span>
+    <span style="color:var(--border)">|</span>
+    <span id="clock">--:--:--</span>
+    <span style="color:var(--border)">|</span>
+    <span>CWE-362</span>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-section">
+      <span class="sidebar-section-title">Overview</span>
+      <div class="lab-item active" onclick="showPanel('home',this)">
+        <div class="item-icon" style="background:rgba(0,212,255,0.1)">&#9671;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Inicio del Lab</span>
+          <span class="lab-item-type">Indice de vulnerabilidades</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-section-title">Vulnerabilidades</span>
+
+      <div class="lab-item" onclick="showPanel('lab1',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 1 — Cupones</span>
+          <span class="lab-item-type">API / Double Spend</span>
+        </div>
+      </div>
+
+      <div class="lab-item" onclick="showPanel('lab2',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 2 — Retiro de Fondos</span>
+          <span class="lab-item-type">Balance Manipulation</span>
+        </div>
+      </div>
+
+      <div class="lab-item" onclick="showPanel('lab3',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 3 — Limite de Intentos</span>
+          <span class="lab-item-type">Rate Limit Bypass</span>
+        </div>
+      </div>
+
+      <div class="lab-item" onclick="showPanel('lab4',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 4 — Inventario</span>
+          <span class="lab-item-type">Over-Selling / Stock</span>
+        </div>
+      </div>
+
+      <div class="lab-item" onclick="showPanel('lab5',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 5 — Registro Unico</span>
+          <span class="lab-item-type">Unique Constraint Bypass</span>
+        </div>
+      </div>
+
+      <div class="lab-item" onclick="showPanel('lab6',this)">
+        <div class="item-icon vuln-icon">&#10006;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Lab 6 — Transferencias</span>
+          <span class="lab-item-type">Concurrent Transfer</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-section-title">Comparativas</span>
+      <div class="lab-item" onclick="showPanel('mitig',this)">
+        <div class="item-icon secure-icon">&#10003;</div>
+        <div class="lab-item-meta">
+          <span class="lab-item-name">Mitigaciones</span>
+          <span class="lab-item-type">Patron seguro vs vulnerable</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="tabs" id="tabBar">
+      <div class="tab active" data-panel="home">&#9671; Inicio</div>
+    </div>
+
+    <div class="content-area" id="contentArea">
+
+<!-- ═══════════════ HOME ═══════════════ -->
+<div class="lab-panel active fade-in" id="panel-home">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Race Condition — Entorno de Laboratorio</div>
+      <div class="lab-desc">
+        Ambiente interactivo para explorar, explotar y comprender vulnerabilidades de condicion de carrera (CWE-362).
+        Cada laboratorio simula un escenario real con estado mutable, metricas en vivo y codigo anotado.
+      </div>
+      <div class="lab-badges">
+        <span class="badge badge-lab">TOCTOU</span>
+        <span class="badge badge-vuln">CWE-362</span>
+        <span class="badge badge-warn">6 Labs activos</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-warn">
+    <strong>Entorno controlado</strong>
+    Todo el estado es simulado en memoria del navegador. No se realizan llamadas a servidores externos. El comportamiento refleja fielmente las condiciones de carrera en sistemas reales usando timing real con Web Workers y Promises concurrentes.
+  </div>
+
+  <div class="home-grid">
+    <div class="home-card c1" onclick="showPanelByName('lab1')">
+      <div class="home-card-icon">&#128179;</div>
+      <div class="home-card-title">Lab 1 — Cupones</div>
+      <div class="home-card-desc">Un cupon de un solo uso se aplica multiples veces mediante requests concurrentes. Patron clasico de double-spend en e-commerce.</div>
+      <div class="home-card-cwe">CWE-362 — API Race / Double Spend</div>
+    </div>
+    <div class="home-card c2" onclick="showPanelByName('lab2')">
+      <div class="home-card-icon">&#127968;</div>
+      <div class="home-card-title">Lab 2 — Retiro de Fondos</div>
+      <div class="home-card-desc">Multiples retiros concurrentes sobre la misma cuenta logran extraer mas fondos de los disponibles. Reproduce fallos de exchanges cripto.</div>
+      <div class="home-card-cwe">CWE-362 — Financial / Balance</div>
+    </div>
+    <div class="home-card c3" onclick="showPanelByName('lab3')">
+      <div class="home-card-icon">&#128274;</div>
+      <div class="home-card-title">Lab 3 — Limite de Intentos</div>
+      <div class="home-card-desc">El contador de intentos fallidos no se actualiza atomicamente, permitiendo bypass de bloqueos de brute-force.</div>
+      <div class="home-card-cwe">CWE-362 — Rate Limit Bypass</div>
+    </div>
+    <div class="home-card c4" onclick="showPanelByName('lab4')">
+      <div class="home-card-icon">&#128230;</div>
+      <div class="home-card-title">Lab 4 — Inventario</div>
+      <div class="home-card-desc">Una tienda vende mas unidades de las disponibles porque la verificacion de stock no es atomica con la reduccion del inventario.</div>
+      <div class="home-card-cwe">CWE-362 — Over-Selling</div>
+    </div>
+    <div class="home-card c5" onclick="showPanelByName('lab5')">
+      <div class="home-card-icon">&#128100;</div>
+      <div class="home-card-title">Lab 5 — Registro Unico</div>
+      <div class="home-card-desc">El username-check antes del INSERT permite registrar el mismo usuario dos veces, violando restricciones de unicidad a nivel de aplicacion.</div>
+      <div class="home-card-cwe">CWE-362 — Unique Constraint</div>
+    </div>
+    <div class="home-card c6" onclick="showPanelByName('lab6')">
+      <div class="home-card-icon">&#8644;</div>
+      <div class="home-card-title">Lab 6 — Transferencias</div>
+      <div class="home-card-desc">Transferencias bidireccionales concurrentes entre cuentas producen inconsistencias contables que no son detectadas hasta la auditoria.</div>
+      <div class="home-card-cwe">CWE-362 — Concurrent Transfer</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Patron TOCTOU — Anatomia del ataque</span>
+    </div>
+    <div class="card-body">
+      <div class="window-viz">
+        <div class="wv-check">CHECK (T1) — Verificar estado</div>
+        <div class="wv-window">VENTANA DE ATAQUE — El atacante actua aqui</div>
+        <div class="wv-use">USE (T2) — Ejecutar accion</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.7;">
+        La vulnerabilidad existe porque el tiempo entre la verificacion (CHECK) y el uso del recurso (USE) permite que otro proceso o request modifique el estado compartido.
+        El atacante no necesita mas que enviar multiples requests simultaneos para explotar esta ventana.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 1 — CUPONES ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab1">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 1 — Race Condition en API de Cupones</div>
+      <div class="lab-desc">Un cupon marcado como "un uso por usuario" puede ser aplicado multiples veces si requests concurrentes pasan la validacion antes de que el primero marque el cupon como usado.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Double Spend</span>
+        <span class="badge badge-lab">TOCTOU</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics" id="metrics1">
+    <div class="metric"><div class="metric-label">Saldo inicial</div><div class="metric-value info" id="m1-initial">$1,000.00</div><div class="metric-sub">Saldo de usuario</div></div>
+    <div class="metric"><div class="metric-label">Saldo actual</div><div class="metric-value" id="m1-balance">$1,000.00</div><div class="metric-sub">Post-ataque</div></div>
+    <div class="metric"><div class="metric-label">Veces aplicado</div><div class="metric-value err" id="m1-applied">0</div><div class="metric-sub">Cupon usada N veces</div></div>
+    <div class="metric"><div class="metric-label">Ganancia ilicita</div><div class="metric-value warn" id="m1-gain">$0.00</div><div class="metric-sub">Sobre el valor real</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion del ataque</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row form-row-2">
+            <div>
+              <label>Codigo de cupon</label>
+              <input type="text" id="l1-coupon" value="SAVE50" />
+            </div>
+            <div>
+              <label>Descuento ($)</label>
+              <input type="number" id="l1-discount" value="50" min="1" max="500" />
+            </div>
+          </div>
+          <div>
+            <label>Requests concurrentes: <span id="l1-threads-val" style="color:var(--accent)">15</span></label>
+            <div class="range-row">
+              <input type="range" id="l1-threads" min="2" max="50" value="15" oninput="document.getElementById('l1-threads-val').textContent=this.value">
+            </div>
+          </div>
+          <div>
+            <label style="margin-top:10px;display:block">Latencia simulada (ms): <span id="l1-latency-val" style="color:var(--accent)">80</span></label>
+            <div class="range-row">
+              <input type="range" id="l1-latency" min="0" max="300" value="80" oninput="document.getElementById('l1-latency-val').textContent=this.value">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab1()">Lanzar ataque</button>
+            <button class="btn btn-ghost" onclick="resetLab1()">Resetear estado</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-viz">
+        <div class="state-label">Estado del servidor (simulado)</div>
+        <div class="state-row">
+          <span class="state-key">coupon.used</span>
+          <span class="state-val" id="l1-state-used">false</span>
+          <div class="progress-bar"><div class="progress-fill" id="l1-bar-used" style="width:0%"></div></div>
+        </div>
+        <div class="state-row">
+          <span class="state-key">user.balance</span>
+          <span class="state-val" id="l1-state-balance">$1,000.00</span>
+          <div class="progress-bar"><div class="progress-fill" id="l1-bar-balance" style="width:100%"></div></div>
+        </div>
+        <div class="state-row">
+          <span class="state-key">requests_in_flight</span>
+          <span class="state-val" id="l1-state-inflight">0</span>
+          <div class="progress-bar"><div class="progress-fill danger" id="l1-bar-inflight" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal" style="height:100%">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">attack-log — Lab 1</span>
+          <span class="badge badge-vuln" id="l1-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l1-log">
+          <div class="log-line log-dim">[system] Lab 1 inicializado. Estado del cupon: no usado.</div>
+          <div class="log-line log-dim">[system] Configure los parametros y lance el ataque.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab-grid" style="margin-top:12px">
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python — Codigo vulnerable</span><button class="code-copy" onclick="this.textContent='Copiado'">Copiar</button></div>
+      <pre><span class="kw">@app</span>.<span class="fn">route</span>(<span class="str">'/apply-coupon'</span>, methods=[<span class="str">'POST'</span>])
+<span class="kw">def</span> <span class="fn">apply_coupon</span>():
+    coupon_code = request.json[<span class="str">'coupon_code'</span>]
+
+    <span class="cm"># CHECK — verificar si el cupon fue usado</span>
+<span class="hi">    coupon = Coupon.query.filter_by(
+        code=coupon_code, used=<span class="kw">False</span>
+    ).first()
+</span>
+    <span class="kw">if not</span> coupon:
+        <span class="kw">return</span> error(<span class="str">'Cupon invalido'</span>)
+
+    <span class="cm"># VENTANA: otro request pasa el CHECK aqui</span>
+    time.sleep(<span class="num">0.08</span>)  <span class="cm"># latencia real de BD</span>
+
+    <span class="cm"># USE — marcar como usado y aplicar</span>
+<span class="hi">    coupon.used = <span class="kw">True</span>
+    user.balance += coupon.discount
+    db.session.commit()
+</span>
+    <span class="kw">return</span> success(coupon.discount)</pre>
+    </div>
+
+    <div>
+      <div class="alert alert-vuln">
+        <strong>Vulnerabilidad identificada</strong>
+        El SELECT y el UPDATE son dos operaciones separadas sin locking. Entre T1 (CHECK) y T2 (USE), N requests concurrentes pueden pasar la validacion porque todos leen el mismo estado initial: <code>used = false</code>.
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">Request A lee coupon.used = false</div>
+            <div class="step-detail">La verificacion pasa correctamente. El request sigue su ejecucion.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">Requests B, C, D... leen coupon.used = false</div>
+            <div class="step-detail">Antes de que A complete el commit, todos los requests concurrentes pasan la misma verificacion.</div>
+          </div>
+        </div>
+        <div class="step vuln">
+          <div class="step-num">!</div>
+          <div class="step-content">
+            <div class="step-title">Todos los requests ejecutan el descuento</div>
+            <div class="step-detail">El ultimo en escribir define coupon.used = true, pero el balance ya fue incrementado N veces.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 2 — RETIRO ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab2">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 2 — Race Condition en Retiro de Fondos</div>
+      <div class="lab-desc">El sistema verifica si hay saldo suficiente, pero entre esa verificacion y el descuento, multiples requests concurrentes logran extraer mas fondos de los realmente disponibles.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Balance Overflow</span>
+        <span class="badge badge-warn">Impacto financiero critico</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Saldo real</div><div class="metric-value info" id="m2-real">$500.00</div><div class="metric-sub">En base de datos</div></div>
+    <div class="metric"><div class="metric-label">Total retirado</div><div class="metric-value err" id="m2-withdrawn">$0.00</div><div class="metric-sub">Suma de retiros</div></div>
+    <div class="metric"><div class="metric-label">Saldo final</div><div class="metric-value" id="m2-final">$500.00</div><div class="metric-sub">Post-ataque</div></div>
+    <div class="metric"><div class="metric-label">Deficit generado</div><div class="metric-value warn" id="m2-deficit">$0.00</div><div class="metric-sub">Balance negativo</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row form-row-2">
+            <div>
+              <label>Saldo inicial ($)</label>
+              <input type="number" id="l2-balance" value="500" min="50" max="10000"/>
+            </div>
+            <div>
+              <label>Monto a retirar ($)</label>
+              <input type="number" id="l2-amount" value="200" min="10" max="5000"/>
+            </div>
+          </div>
+          <div>
+            <label>Requests concurrentes: <span id="l2-threads-val" style="color:var(--accent)">10</span></label>
+            <div class="range-row">
+              <input type="range" id="l2-threads" min="2" max="30" value="10" oninput="document.getElementById('l2-threads-val').textContent=this.value">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab2()">Lanzar ataque</button>
+            <button class="btn btn-ghost" onclick="resetLab2()">Resetear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-viz">
+        <div class="state-label">Flujo de ejecucion concurrente</div>
+        <div id="l2-timeline" class="timeline">
+          <div class="log-dim" style="font-size:11px">Lance el ataque para visualizar el timeline.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">attack-log — Lab 2</span>
+          <span class="badge badge-vuln" id="l2-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l2-log">
+          <div class="log-line log-dim">[system] Lab 2 inicializado.</div>
+          <div class="log-line log-dim">[system] Los retiros usaran el saldo configurado.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab-grid" style="margin-top:12px">
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python — Codigo vulnerable</span><button class="code-copy" onclick="this.textContent='Copiado'">Copiar</button></div>
+      <pre><span class="kw">@app</span>.<span class="fn">route</span>(<span class="str">'/withdraw'</span>, methods=[<span class="str">'POST'</span>])
+<span class="kw">def</span> <span class="fn">withdraw</span>():
+    amount = request.json[<span class="str">'amount'</span>]
+    account = Account.query.filter_by(
+        user_id=current_user
+    ).first()
+
+    <span class="cm"># CHECK — verificar fondos suficientes</span>
+<span class="hi">    <span class="kw">if</span> account.balance &lt; amount:
+        <span class="kw">return</span> error(<span class="str">'Fondos insuficientes'</span>)
+</span>
+    <span class="cm"># VENTANA — todos los requests concurrentes</span>
+    <span class="cm"># ya pasaron el check con el mismo saldo</span>
+    time.sleep(<span class="num">0.05</span>)
+
+    <span class="cm"># USE — descontar sin verificacion atomica</span>
+<span class="hi">    account.balance -= amount
+    db.session.commit()
+</span>
+    <span class="kw">return</span> success(account.balance)</pre>
+    </div>
+    <div>
+      <div class="alert alert-vuln" style="margin-bottom:12px">
+        <strong>Escenario real documentado</strong>
+        Este patron fue explotado en multiples exchanges de criptomonedas entre 2018 y 2021. El ataque es completamente automatizable: un script envia N requests en paralelo, todos pasan la verificacion de saldo con el mismo valor inicial, y todos ejecutan el descuento.
+      </div>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Estado inconsistente resultante</span></div>
+        <pre><span class="cm"># Saldo inicial: $500</span>
+<span class="cm"># Monto por retiro: $200</span>
+<span class="cm"># Requests concurrentes: 5</span>
+
+<span class="cm"># Todos leen: balance = 500 → 500 &gt;= 200 ✓</span>
+R1 balance = 500 - 200 = <span class="num">300</span>  <span class="cm">← escribe</span>
+R2 balance = 500 - 200 = <span class="num">300</span>  <span class="cm">← sobreescribe R1</span>
+R3 balance = 500 - 200 = <span class="num">300</span>  <span class="cm">← sobreescribe R2</span>
+
+<span class="cm"># Balance final en BD: $300</span>
+<span class="cm"># Dinero entregado: $600 (3 retiros de $200)</span>
+<span class="err kw"># Deficit: -$100</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 3 — RATE LIMIT ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab3">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 3 — Bypass de Limite de Intentos</div>
+      <div class="lab-desc">El sistema bloquea una cuenta despues de 3 intentos fallidos. Sin embargo, si los incrementos al contador no son atomicos, un atacante puede realizar mas intentos de los permitidos antes de ser bloqueado.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Rate Limit Bypass</span>
+        <span class="badge badge-lab">Brute Force</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Contador real</div><div class="metric-value err" id="m3-counter">0</div><div class="metric-sub">Intentos registrados</div></div>
+    <div class="metric"><div class="metric-label">Limite permitido</div><div class="metric-value info" id="m3-limit">3</div><div class="metric-sub">Configurado</div></div>
+    <div class="metric"><div class="metric-label">Intentos bypass</div><div class="metric-value warn" id="m3-bypassed">0</div><div class="metric-sub">Pasaron el limite</div></div>
+    <div class="metric"><div class="metric-label">Estado cuenta</div><div class="metric-value ok" id="m3-locked">ACTIVA</div><div class="metric-sub">Deberia estar bloqueada</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row form-row-2">
+            <div>
+              <label>Limite de intentos</label>
+              <input type="number" id="l3-limit" value="3" min="1" max="10"/>
+            </div>
+            <div>
+              <label>Requests concurrentes</label>
+              <input type="number" id="l3-threads" value="20" min="2" max="50"/>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab3()">Lanzar bypass</button>
+            <button class="btn btn-ghost" onclick="resetLab3()">Resetear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python — Logica vulnerable</span></div>
+        <pre><span class="kw">def</span> <span class="fn">check_rate_limit</span>(user_id):
+    attempts = cache.get(
+        <span class="str">f'attempts:{user_id}'</span>
+    ) <span class="kw">or</span> <span class="num">0</span>
+
+    <span class="cm"># CHECK — leer contador actual</span>
+<span class="hi">    <span class="kw">if</span> attempts >= MAX_ATTEMPTS:
+        <span class="kw">raise</span> TooManyAttempts()
+</span>
+    <span class="cm"># VENTANA — N requests pasan el check</span>
+    <span class="cm"># con el mismo valor de 'attempts'</span>
+
+    <span class="cm"># USE — incrementar (no atomico)</span>
+<span class="hi">    cache.set(<span class="str">f'attempts:{user_id}'</span>,
+              attempts + <span class="num">1</span>)  <span class="cm"># no atomico!</span>
+</span>
+<span class="cm"># Correcto: cache.incr('attempts:uid')</span></pre>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">attack-log — Lab 3</span>
+          <span class="badge badge-vuln" id="l3-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l3-log">
+          <div class="log-line log-dim">[system] Lab 3 inicializado.</div>
+          <div class="log-line log-dim">[system] El limite es de <span id="l3-limit-display">3</span> intentos.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 4 — INVENTARIO ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab4">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 4 — Overselling de Inventario</div>
+      <div class="lab-desc">Una tienda tiene N unidades disponibles. Compras concurrentes que pasan la verificacion de stock simultaneamente causan que se vendan mas unidades de las existentes.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Over-Selling</span>
+        <span class="badge badge-lab">Inventory Race</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Stock inicial</div><div class="metric-value info" id="m4-initial">5</div><div class="metric-sub">Unidades disponibles</div></div>
+    <div class="metric"><div class="metric-label">Stock actual</div><div class="metric-value" id="m4-current">5</div><div class="metric-sub">En base de datos</div></div>
+    <div class="metric"><div class="metric-label">Ventas realizadas</div><div class="metric-value err" id="m4-sold">0</div><div class="metric-sub">Ordenes generadas</div></div>
+    <div class="metric"><div class="metric-label">Overselling</div><div class="metric-value warn" id="m4-over">0</div><div class="metric-sub">Unidades de mas</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row form-row-2">
+            <div>
+              <label>Stock disponible</label>
+              <input type="number" id="l4-stock" value="5" min="1" max="50"/>
+            </div>
+            <div>
+              <label>Compradores concurrentes</label>
+              <input type="number" id="l4-buyers" value="20" min="2" max="100"/>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab4()">Simular compras</button>
+            <button class="btn btn-ghost" onclick="resetLab4()">Resetear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-viz">
+        <div class="state-label">Nivel de stock en tiempo real</div>
+        <div class="state-row">
+          <span class="state-key">products.stock</span>
+          <span class="state-val" id="l4-state-stock">5</span>
+          <div class="progress-bar"><div class="progress-fill" id="l4-bar-stock" style="width:100%"></div></div>
+        </div>
+        <div class="state-row">
+          <span class="state-key">orders.count</span>
+          <span class="state-val err" id="l4-state-orders">0</span>
+          <div class="progress-bar"><div class="progress-fill danger" id="l4-bar-orders" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">purchase-log — Lab 4</span>
+          <span class="badge badge-vuln" id="l4-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l4-log">
+          <div class="log-line log-dim">[system] Lab 4 inicializado.</div>
+          <div class="log-line log-dim">[system] Configure el stock y los compradores.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 5 — REGISTRO UNICO ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab5">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 5 — Bypass de Registro Unico</div>
+      <div class="lab-desc">El sistema verifica si un username existe antes de insertarlo. Con requests concurrentes, ambos pasan la verificacion de unicidad antes de que alguno complete el INSERT, resultando en usuarios duplicados.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Unique Constraint</span>
+        <span class="badge badge-lab">Duplicate User</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Usuarios registrados</div><div class="metric-value err" id="m5-users">0</div><div class="metric-sub">Deberia ser max 1</div></div>
+    <div class="metric"><div class="metric-label">Duplicados</div><div class="metric-value warn" id="m5-dupes">0</div><div class="metric-sub">Violacion de unicidad</div></div>
+    <div class="metric"><div class="metric-label">Requests enviados</div><div class="metric-value info" id="m5-sent">0</div><div class="metric-sub">Intentos totales</div></div>
+    <div class="metric"><div class="metric-label">Estado DB</div><div class="metric-value" id="m5-state">LIMPIA</div><div class="metric-sub">Integridad</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div>
+              <label>Username a registrar</label>
+              <input type="text" id="l5-username" value="admin_user"/>
+            </div>
+          </div>
+          <div>
+            <label>Requests concurrentes: <span id="l5-threads-val" style="color:var(--accent)">10</span></label>
+            <div class="range-row">
+              <input type="range" id="l5-threads" min="2" max="30" value="10" oninput="document.getElementById('l5-threads-val').textContent=this.value">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab5()">Registrar concurrente</button>
+            <button class="btn btn-ghost" onclick="resetLab5()">Resetear</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="l5-user-table-wrap" style="display:none">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Tabla users (estado BD)</span><span class="badge badge-vuln" id="l5-integrity-badge">CORROMPIDA</span></div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table" id="l5-user-table">
+              <thead><tr><th>#</th><th>Username</th><th>Creado en</th><th>Request ID</th></tr></thead>
+              <tbody id="l5-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">register-log — Lab 5</span>
+          <span class="badge badge-vuln" id="l5-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l5-log">
+          <div class="log-line log-dim">[system] Lab 5 inicializado.</div>
+          <div class="log-line log-dim">[system] Sin UNIQUE constraint a nivel DB, depende de app-level check.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LAB 6 — TRANSFERENCIAS ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-lab6">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Lab 6 — Race Condition en Transferencias Concurrentes</div>
+      <div class="lab-desc">Transferencias simultaneas entre dos cuentas sin locking producen inconsistencias contables. El total de fondos en el sistema deberia ser constante, pero la concurrencia corrompe ese invariante.</div>
+      <div class="lab-badges">
+        <span class="badge badge-vuln">Vulnerable</span>
+        <span class="badge badge-lab">Concurrent Transfer</span>
+        <span class="badge badge-warn">Lost Update</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Cuenta A</div><div class="metric-value info" id="m6-a">$1,000.00</div><div class="metric-sub">Saldo actual</div></div>
+    <div class="metric"><div class="metric-label">Cuenta B</div><div class="metric-value info" id="m6-b">$1,000.00</div><div class="metric-sub">Saldo actual</div></div>
+    <div class="metric"><div class="metric-label">Total esperado</div><div class="metric-value ok" id="m6-expected">$2,000.00</div><div class="metric-sub">Invariante</div></div>
+    <div class="metric"><div class="metric-label">Total real</div><div class="metric-value" id="m6-real">$2,000.00</div><div class="metric-sub">Post-ataque</div></div>
+  </div>
+
+  <div class="lab-grid">
+    <div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Configuracion</span><span class="badge badge-vuln">VULNERABLE</span></div>
+        <div class="card-body">
+          <div class="form-row form-row-2">
+            <div>
+              <label>Saldo cuenta A ($)</label>
+              <input type="number" id="l6-a" value="1000" min="100"/>
+            </div>
+            <div>
+              <label>Saldo cuenta B ($)</label>
+              <input type="number" id="l6-b" value="1000" min="100"/>
+            </div>
+          </div>
+          <div class="form-row form-row-2">
+            <div>
+              <label>Monto transferencia ($)</label>
+              <input type="number" id="l6-amount" value="100" min="1"/>
+            </div>
+            <div>
+              <label>Transferencias concurrentes</label>
+              <input type="number" id="l6-count" value="20" min="2" max="100"/>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="runLab6()">Lanzar transferencias</button>
+            <button class="btn btn-ghost" onclick="resetLab6()">Resetear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-viz">
+        <div class="state-label">Invariante contable</div>
+        <div class="state-row">
+          <span class="state-key">cuenta_A.balance</span>
+          <span class="state-val" id="l6-state-a">$1,000.00</span>
+          <div class="progress-bar"><div class="progress-fill" id="l6-bar-a" style="width:50%"></div></div>
+        </div>
+        <div class="state-row">
+          <span class="state-key">cuenta_B.balance</span>
+          <span class="state-val" id="l6-state-b">$1,000.00</span>
+          <div class="progress-bar"><div class="progress-fill" id="l6-bar-b" style="width:50%"></div></div>
+        </div>
+        <div class="state-row">
+          <span class="state-key">total_sistema</span>
+          <span class="state-val ok" id="l6-state-total">$2,000.00</span>
+          <div class="progress-bar"><div class="progress-fill" id="l6-bar-total" style="width:100%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <span class="terminal-title">transfer-log — Lab 6</span>
+          <span class="badge badge-vuln" id="l6-status">READY</span>
+        </div>
+        <div class="terminal-body" id="l6-log">
+          <div class="log-line log-dim">[system] Lab 6 inicializado.</div>
+          <div class="log-line log-dim">[system] El total A+B deberia mantenerse constante.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MITIGACIONES ═══════════════ -->
+<div class="lab-panel fade-in" id="panel-mitig">
+  <div class="lab-header">
+    <div>
+      <div class="lab-title">Mitigaciones — Patrones de Codigo Seguro</div>
+      <div class="lab-desc">Comparativa directa entre implementaciones vulnerables y sus contrapartes seguras. Cada patron aborda el problema en una capa diferente del stack.</div>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    <strong>Principio fundamental</strong>
+    Toda mitigacion de Race Condition busca lo mismo: hacer que la verificacion (CHECK) y el uso del recurso (USE) sean una operacion atomica. Si no existe ventana entre ambas, no existe race condition explotable.
+  </div>
+
+  <!-- MITIGACION 1 -->
+  <div style="margin-bottom:8px;font-family:var(--font-ui);font-size:13px;font-weight:700;color:var(--text-hi)">
+    1 — Locking Pesimista (SELECT ... FOR UPDATE)
+  </div>
+  <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+    Bloquea el row en el momento de la lectura. Otros transactions que intenten leer ese row quedaran en espera hasta que el primero haga commit. Aplica cuando el recurso es una fila de base de datos relacional.
+  </div>
+  <div class="compare-grid" style="margin-bottom:24px">
+    <div class="compare-col">
+      <div class="compare-header vuln">&#10006; Vulnerable — SELECT sin lock</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="cm"># Dos transactions pueden leer</span>
+<span class="cm"># el mismo row simultaneamente</span>
+
+coupon = Coupon.query.filter_by(
+    code=code, used=<span class="kw">False</span>
+).first()
+<span class="cm"># ^^ Sin lock: N readers, N writers</span>
+
+<span class="kw">if not</span> coupon:
+    <span class="kw">return</span> error()
+
+<span class="cm"># Ventana de ataque aqui</span>
+
+coupon.used = <span class="kw">True</span>
+db.session.commit()</pre>
+      </div>
+    </div>
+    <div class="compare-col">
+      <div class="compare-header secure">&#10003; Seguro — SELECT FOR UPDATE</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="cm"># El lock excluye otros readers</span>
+<span class="cm"># hasta que este transaction termine</span>
+
+coupon = Coupon.query.filter_by(
+    code=code, used=<span class="kw">False</span>
+<span class="hi-ok">).with_for_update().first()
+</span><span class="cm"># ^^ SELECT ... FOR UPDATE</span>
+<span class="cm"># Bloquea el row inmediatamente</span>
+
+<span class="kw">if not</span> coupon:
+    <span class="kw">return</span> error()
+
+<span class="cm"># No hay ventana: row bloqueado</span>
+
+coupon.used = <span class="kw">True</span>
+db.session.commit()
+<span class="cm"># Lock se libera en commit</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- MITIGACION 2 -->
+  <div style="margin-bottom:8px;font-family:var(--font-ui);font-size:13px;font-weight:700;color:var(--text-hi)">
+    2 — Operacion Atomica (UPDATE ... WHERE)
+  </div>
+  <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+    Combina la verificacion y la actualizacion en un unico statement SQL. El motor de BD garantiza atomicidad: solo el primer UPDATE tendra affected_rows = 1. Los siguientes encontraran que la condicion ya no se cumple.
+  </div>
+  <div class="compare-grid" style="margin-bottom:24px">
+    <div class="compare-col">
+      <div class="compare-header vuln">&#10006; Vulnerable — Read-Check-Write</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="cm"># Tres operaciones separadas:</span>
+<span class="cm"># 1. READ  — leer saldo</span>
+<span class="cm"># 2. CHECK — verificar fondos</span>
+<span class="cm"># 3. WRITE — descontar</span>
+<span class="cm"># Cada una puede ser interrumpida</span>
+
+account = Account.query.get(uid)
+
+<span class="hi"><span class="kw">if</span> account.balance &lt; amount:
+    <span class="kw">return</span> error()
+</span>
+account.balance -= amount
+db.session.commit()</pre>
+      </div>
+    </div>
+    <div class="compare-col">
+      <div class="compare-header secure">&#10003; Seguro — UPDATE atomico con guard</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="cm"># Una sola operacion atomica:</span>
+<span class="cm"># La condicion WHERE actua como guard</span>
+<span class="cm"># Solo si balance >= amount → descuenta</span>
+<span class="cm"># affected_rows = 0 → fondos insuficientes</span>
+
+result = db.session.execute(
+<span class="hi-ok">    update(Account)
+    .where(Account.balance >= amount)
+    .values(balance=Account.balance - amount)
+    .returning(Account.balance)
+</span>)
+row = result.fetchone()
+<span class="kw">if not</span> row:
+    <span class="kw">return</span> error(<span class="str">'Fondos insuf.'</span>)</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- MITIGACION 3 -->
+  <div style="margin-bottom:8px;font-family:var(--font-ui);font-size:13px;font-weight:700;color:var(--text-hi)">
+    3 — Lock Distribuido con Redis
+  </div>
+  <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+    Cuando el sistema esta distribuido (multiples instancias de la app), se necesita un lock fuera de la base de datos. Redis ofrece SET NX (Set if Not eXists) que es atomico a nivel de servidor Redis, garantizando que solo un proceso adquiera el lock a la vez.
+  </div>
+  <div class="compare-grid" style="margin-bottom:24px">
+    <div class="compare-col">
+      <div class="compare-header vuln">&#10006; Vulnerable — Sin lock distribuido</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="cm"># En sistemas con N instancias,</span>
+<span class="cm"># el lock de BD no protege</span>
+<span class="cm"># operaciones que involucran</span>
+<span class="cm"># recursos externos (APIs, files)</span>
+
+<span class="kw">def</span> <span class="fn">process_order</span>(order_id):
+    order = get_order(order_id)
+
+    <span class="cm"># Cada instancia ejecuta esto</span>
+    <span class="cm"># sin coordinacion</span>
+<span class="hi">    external_api.charge(order)
+    order.status = <span class="str">'paid'</span>
+    save(order)
+</span></pre>
+      </div>
+    </div>
+    <div class="compare-col">
+      <div class="compare-header secure">&#10003; Seguro — Redis distributed lock</div>
+      <div class="code-block" style="border:none;border-radius:0">
+        <pre><span class="kw">import</span> redis
+
+<span class="kw">def</span> <span class="fn">process_order</span>(order_id):
+    lock_key = <span class="str">f'lock:order:{order_id}'</span>
+<span class="hi-ok">
+    acquired = redis.set(
+        lock_key, uuid4(),
+        nx=<span class="kw">True</span>,  <span class="cm"># Solo si no existe</span>
+        ex=<span class="num">10</span>     <span class="cm"># TTL: evita deadlock</span>
+    )
+</span>    <span class="kw">if not</span> acquired:
+        <span class="kw">return</span> error(<span class="str">'En proceso'</span>)
+
+    <span class="kw">try</span>:
+        external_api.charge(order)
+        order.status = <span class="str">'paid'</span>
+        save(order)
+    <span class="kw">finally</span>:
+        redis.delete(lock_key)</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLA DECISION -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Tabla de decision — Que patron usar segun contexto</span></div>
+    <div class="card-body" style="padding:0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Escenario</th>
+            <th>Patron recomendado</th>
+            <th>Garantia</th>
+            <th>Overhead</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>BD relacional, operacion simple</td>
+            <td><span class="badge badge-secure">SELECT FOR UPDATE</span></td>
+            <td style="color:var(--accent3)">BD-level locking</td>
+            <td style="color:var(--accent3)">Bajo</td>
+          </tr>
+          <tr>
+            <td>BD relacional, maxima eficiencia</td>
+            <td><span class="badge badge-secure">UPDATE ... WHERE atomico</span></td>
+            <td style="color:var(--accent3)">Atomicidad SQL</td>
+            <td style="color:var(--accent3)">Minimo</td>
+          </tr>
+          <tr>
+            <td>Sistema distribuido / N instancias</td>
+            <td><span class="badge badge-secure">Redis distributed lock</span></td>
+            <td style="color:var(--accent3)">Cross-process</td>
+            <td style="color:var(--warn)">Medio</td>
+          </tr>
+          <tr>
+            <td>Contador / incremento</td>
+            <td><span class="badge badge-secure">INCR atomico (Redis/SQL)</span></td>
+            <td style="color:var(--accent3)">Operacion atomica</td>
+            <td style="color:var(--accent3)">Bajo</td>
+          </tr>
+          <tr>
+            <td>Sistema de archivos</td>
+            <td><span class="badge badge-secure">mkstemp() / operar en memoria</span></td>
+            <td style="color:var(--accent3)">OS-level atomic</td>
+            <td style="color:var(--accent3)">Bajo</td>
+          </tr>
+          <tr>
+            <td>Multi-threading (app-level)</td>
+            <td><span class="badge badge-secure">Mutex / semaforos</span></td>
+            <td style="color:var(--accent3)">Thread-safe</td>
+            <td style="color:var(--warn)">Medio</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <div style="font-family:var(--font-ui);font-size:13px;font-weight:700;color:var(--text-hi);margin-bottom:12px">
+      Checklist de Code Review — Patrones de alto riesgo
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">SELECT seguido de UPDATE sin with_for_update()</div>
+          <div class="step-detail">Si hay un SELECT que lee un valor y luego un UPDATE que depende de ese valor, sin locking pesimista, la operacion es potencialmente vulnerable.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">Verificaciones booleanas antes de modificar estado</div>
+          <div class="step-detail">if coupon.used == False: → coupon.used = True es el patron TOCTOU clasico. Debe ser una operacion atomica.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">Contadores no atomicos (read + increment + write)</div>
+          <div class="step-detail">counter = get(key); set(key, counter + 1) es vulnerable. Usar INCR de Redis o UPDATE counter = counter + 1 en SQL.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">Verificaciones de unicidad a nivel de aplicacion</div>
+          <div class="step-detail">El check de "username ya existe" debe estar en la base de datos como UNIQUE constraint, no solo en el codigo de la aplicacion.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-title">Transacciones sin nivel de aislamiento correcto</div>
+          <div class="step-detail">El nivel por defecto READ COMMITTED no protege contra Race Conditions. Evaluar REPEATABLE READ o SERIALIZABLE segun el caso.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    </div><!-- /content-area -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+// ═══════════════ UTILITY ═══════════════
+const $ = id => document.getElementById(id);
+const fmt = n => '$' + n.toFixed(2);
+
+function ts() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`;
+}
+
+function appendLog(logId, msg, cls='') {
+  const el = $(logId);
+  const div = document.createElement('div');
+  div.className = `log-line ${cls}`;
+  div.innerHTML = `<span class="log-time">[${ts()}]</span> ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog(logId) {
+  $(logId).innerHTML = '';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function setStatus(id, text, cls='badge-lab') {
+  const el = $(id);
+  el.textContent = text;
+  el.className = 'badge ' + cls;
+}
+
+// Clock
+setInterval(() => {
+  const d = new Date();
+  $('clock').textContent = d.toTimeString().slice(0,8);
+}, 1000);
+
+// ═══════════════ NAV ═══════════════
+const panels = {};
+const tabBar = $('tabBar');
+
+function showPanel(name, el) {
+  document.querySelectorAll('.lab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.lab-item').forEach(i => i.classList.remove('active'));
+  const panel = $('panel-' + name);
+  if (panel) {
+    panel.classList.add('active');
+    panel.classList.remove('fade-in');
+    void panel.offsetWidth;
+    panel.classList.add('fade-in');
+  }
+  if (el) el.classList.add('active');
+  updateTab(name, el);
+}
+
+function showPanelByName(name) {
+  const item = document.querySelector(`.lab-item[onclick="showPanel('${name}',this)"]`);
+  showPanel(name, item);
+}
+
+const tabLabels = {
+  home: '&#9671; Inicio',
+  lab1: 'Lab 1 — Cupones',
+  lab2: 'Lab 2 — Retiro',
+  lab3: 'Lab 3 — Rate Limit',
+  lab4: 'Lab 4 — Inventario',
+  lab5: 'Lab 5 — Registro',
+  lab6: 'Lab 6 — Transferencias',
+  mitig: 'Mitigaciones'
+};
+
+const openTabs = ['home'];
+
+function updateTab(name) {
+  if (!openTabs.includes(name)) openTabs.push(name);
+  renderTabs(name);
+}
+
+function renderTabs(active) {
+  tabBar.innerHTML = '';
+  openTabs.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'tab' + (t === active ? ' active' : '');
+    div.innerHTML = tabLabels[t] || t;
+    div.onclick = () => {
+      const item = document.querySelector(`.lab-item[onclick="showPanel('${t}',this)"]`);
+      showPanel(t, item);
+    };
+    tabBar.appendChild(div);
+  });
+}
+
+// ═══════════════ LAB 1 — CUPONES ═══════════════
+let lab1 = { balance: 1000, couponUsed: false, appliedTimes: 0 };
+
+function resetLab1() {
+  lab1 = { balance: 1000, couponUsed: false, appliedTimes: 0 };
+  updateLab1UI();
+  clearLog('l1-log');
+  appendLog('l1-log', 'Estado reseteado. Cupon disponible.', 'log-dim');
+  setStatus('l1-status', 'READY');
+}
+
+function updateLab1UI() {
+  const initial = 1000;
+  $('m1-balance').textContent = fmt(lab1.balance);
+  $('m1-applied').textContent = lab1.appliedTimes;
+  const gain = lab1.balance - initial;
+  $('m1-gain').textContent = fmt(Math.max(0, gain));
+  if (gain > 0) { $('m1-gain').className = 'metric-value warn'; $('m1-balance').className = 'metric-value err'; }
+  $('l1-state-used').textContent = lab1.couponUsed ? 'true' : 'false';
+  $('l1-state-used').className = 'state-val ' + (lab1.couponUsed ? 'inc' : '');
+  $('l1-state-balance').textContent = fmt(lab1.balance);
+}
+
+async function runLab1() {
+  resetLab1();
+  await sleep(100);
+  const threads = parseInt($('l1-threads').value);
+  const discount = parseFloat($('l1-discount').value) || 50;
+  const latency = parseInt($('l1-latency').value);
+  const coupon = $('l1-coupon').value;
+
+  setStatus('l1-status', 'RUNNING', 'badge-warn');
+  appendLog('l1-log', `Iniciando ataque con ${threads} requests concurrentes`, 'log-warn');
+  appendLog('l1-log', `Cupon: ${coupon} | Descuento: ${fmt(discount)} | Latencia: ${latency}ms`, 'log-dim');
+
+  let inFlight = 0;
+  const maxFlight = threads;
+
+  // Simulate concurrent requests
+  const requests = Array.from({length: threads}, (_, i) => i);
+
+  const runRequest = async (id) => {
+    inFlight++;
+    $('l1-state-inflight').textContent = inFlight;
+    $('l1-bar-inflight').style.width = (inFlight / maxFlight * 100) + '%';
+
+    // CHECK phase — all see coupon.used = false simultaneously
+    const checkedUsed = lab1.couponUsed;
+
+    await sleep(latency + Math.random() * 20);
+
+    // USE phase
+    if (!checkedUsed) {
+      // Race: we checked false, now use
+      lab1.couponUsed = true;
+      lab1.balance += discount;
+      lab1.appliedTimes++;
+      appendLog('l1-log', `<span class="log-ok">REQUEST-${id} EXITO — cupon aplicado, descuento: ${fmt(discount)}</span>`, '');
+    } else {
+      appendLog('l1-log', `<span class="log-err">REQUEST-${id} RECHAZADO — cupon ya marcado como usado</span>`, '');
+    }
+
+    inFlight--;
+    $('l1-state-inflight').textContent = inFlight;
+    $('l1-bar-inflight').style.width = (inFlight / maxFlight * 100) + '%';
+    updateLab1UI();
+  };
+
+  // Launch all simultaneously — this is the key
+  // We snapshot the coupon state BEFORE any request modifies it
+  await Promise.all(requests.map(id => runRequest(id)));
+
+  const gain = lab1.balance - 1000;
+
+  if (lab1.appliedTimes > 1) {
+    appendLog('l1-log', `<span class="log-err">VULNERABILIDAD CONFIRMADA — cupon aplicado ${lab1.appliedTimes}x</span>`, '');
+    appendLog('l1-log', `Descuento total: ${fmt(lab1.appliedTimes * discount)} | Esperado: ${fmt(discount)} | Ganancia: ${fmt(gain)}`, 'log-warn');
+    setStatus('l1-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    appendLog('l1-log', 'Race condition no detectada en este intento. Aumenta los threads.', 'log-ok');
+    setStatus('l1-status', 'NO RACE', 'badge-secure');
+  }
+
+  $('l1-bar-used').style.width = '100%';
+}
+
+// ═══════════════ LAB 2 — RETIRO ═══════════════
+let lab2 = { balance: 500, withdrawn: 0, initial: 500 };
+
+function resetLab2() {
+  const bal = parseFloat($('l2-balance').value) || 500;
+  lab2 = { balance: bal, withdrawn: 0, initial: bal };
+  $('m2-real').textContent = fmt(bal);
+  $('m2-final').textContent = fmt(bal);
+  $('m2-withdrawn').textContent = fmt(0);
+  $('m2-deficit').textContent = fmt(0);
+  $('m2-deficit').parentElement.querySelector('.metric-value').className = 'metric-value';
+  clearLog('l2-log');
+  appendLog('l2-log', 'Estado reseteado.', 'log-dim');
+  $('l2-timeline').innerHTML = '<div class="log-dim" style="font-size:11px">Lance el ataque para visualizar el timeline.</div>';
+  setStatus('l2-status', 'READY');
+}
+
+async function runLab2() {
+  const initBal = parseFloat($('l2-balance').value) || 500;
+  const amount = parseFloat($('l2-amount').value) || 200;
+  const threads = parseInt($('l2-threads').value);
+
+  lab2 = { balance: initBal, withdrawn: 0, initial: initBal };
+  clearLog('l2-log');
+
+  setStatus('l2-status', 'RUNNING', 'badge-warn');
+  appendLog('l2-log', `Saldo inicial: ${fmt(initBal)} | Retiro: ${fmt(amount)} | Threads: ${threads}`, 'log-dim');
+  appendLog('l2-log', `Saldo suficiente para ${Math.floor(initBal / amount)} retiro(s)`, 'log-dim');
+
+  const tl = $('l2-timeline');
+  tl.innerHTML = '<div class="timeline-track" id="l2-tl-track"></div>';
+  const track = $('l2-tl-track');
+
+  let successCount = 0;
+
+  const runRequest = async (id) => {
+    const blk = document.createElement('div');
+    blk.className = 'tl-block racing';
+    blk.style.width = '40px';
+    blk.textContent = `R${id}`;
+    track.appendChild(blk);
+
+    const checkedBalance = lab2.balance; // All see the same initial balance
+    await sleep(50 + Math.random() * 30);
+
+    if (checkedBalance >= amount) {
+      // Race: we checked sufficient balance, now deduct
+      lab2.balance -= amount;
+      lab2.withdrawn += amount;
+      successCount++;
+      blk.className = 'tl-block success';
+      appendLog('l2-log', `<span class="log-ok">REQUEST-${id}: retiro exitoso ${fmt(amount)} | balance: ${fmt(lab2.balance)}</span>`, '');
+    } else {
+      blk.className = 'tl-block failed';
+      appendLog('l2-log', `<span class="log-err">REQUEST-${id}: rechazado — fondos insuficientes</span>`, '');
+    }
+
+    $('m2-real').textContent = fmt(lab2.balance);
+    $('m2-final').textContent = fmt(lab2.balance);
+    $('m2-withdrawn').textContent = fmt(lab2.withdrawn);
+    const deficit = lab2.withdrawn - initBal;
+    $('m2-deficit').textContent = fmt(Math.max(0, deficit));
+    if (deficit > 0) $('m2-deficit').className = 'metric-value err';
+  };
+
+  await Promise.all(Array.from({length: threads}, (_, i) => runRequest(i)));
+
+  const deficit = lab2.withdrawn - initBal;
+  if (deficit > 0) {
+    appendLog('l2-log', `<span class="log-err">VULNERABILIDAD CONFIRMADA — deficit: ${fmt(deficit)}</span>`, '');
+    appendLog('l2-log', `${successCount} retiros exitosos x ${fmt(amount)} = ${fmt(lab2.withdrawn)} sobre ${fmt(initBal)} disponibles`, 'log-warn');
+    setStatus('l2-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    appendLog('l2-log', `${successCount} retiro(s) exitoso(s). No se detecto race condition.`, 'log-ok');
+    setStatus('l2-status', 'OK', 'badge-secure');
+  }
+}
+
+// ═══════════════ LAB 3 — RATE LIMIT ═══════════════
+let lab3 = { counter: 0, bypassed: 0, locked: false };
+
+function resetLab3() {
+  lab3 = { counter: 0, bypassed: 0, locked: false };
+  $('m3-counter').textContent = 0;
+  $('m3-bypassed').textContent = 0;
+  $('m3-locked').textContent = 'ACTIVA';
+  $('m3-locked').className = 'metric-value ok';
+  clearLog('l3-log');
+  appendLog('l3-log', 'Contador reseteado. Cuenta desbloqueada.', 'log-dim');
+  setStatus('l3-status', 'READY');
+}
+
+async function runLab3() {
+  const limit = parseInt($('l3-limit').value) || 3;
+  const threads = parseInt($('l3-threads').value) || 20;
+  lab3 = { counter: 0, bypassed: 0, locked: false };
+
+  clearLog('l3-log');
+  setStatus('l3-status', 'RUNNING', 'badge-warn');
+  appendLog('l3-log', `Limite: ${limit} intentos | Threads: ${threads}`, 'log-dim');
+  appendLog('l3-log', `Sin race: solo ${limit} requests pasarian. Con race: potencialmente ${threads}`, 'log-dim');
+
+  const runRequest = async (id) => {
+    // CHECK — read counter (all read the same value simultaneously)
+    const seen = lab3.counter;
+    await sleep(10 + Math.random() * 20);
+
+    // USE — based on what we read
+    if (seen >= limit) {
+      appendLog('l3-log', `<span class="log-err">REQUEST-${id}: BLOQUEADO (contador visto: ${seen})</span>`, '');
+      return;
+    }
+
+    // Increment (non-atomic in vulnerable version)
+    lab3.counter = seen + 1; // This is the race: all increment from same base
+    lab3.bypassed++;
+    $('m3-counter').textContent = lab3.counter;
+    $('m3-bypassed').textContent = lab3.bypassed;
+
+    appendLog('l3-log', `<span class="log-ok">REQUEST-${id}: PASO — intento #${lab3.bypassed} (contador: ${lab3.counter})</span>`, '');
+  };
+
+  await Promise.all(Array.from({length: threads}, (_, i) => runRequest(i)));
+
+  if (lab3.bypassed > limit) {
+    $('m3-locked').textContent = 'DEBERIA ESTAR BLOQUEADA';
+    $('m3-locked').className = 'metric-value err';
+    appendLog('l3-log', `<span class="log-err">VULNERABILIDAD: ${lab3.bypassed} intentos pasaron (limite: ${limit})</span>`, '');
+    setStatus('l3-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    $('m3-locked').textContent = 'BLOQUEADA';
+    $('m3-locked').className = 'metric-value err';
+    setStatus('l3-status', 'OK', 'badge-secure');
+  }
+}
+
+// ═══════════════ LAB 4 — INVENTARIO ═══════════════
+let lab4 = { stock: 5, initial: 5, sold: 0 };
+
+function resetLab4() {
+  const st = parseInt($('l4-stock').value) || 5;
+  lab4 = { stock: st, initial: st, sold: 0 };
+  $('m4-initial').textContent = st;
+  $('m4-current').textContent = st;
+  $('m4-sold').textContent = 0;
+  $('m4-over').textContent = 0;
+  $('l4-state-stock').textContent = st;
+  $('l4-state-orders').textContent = 0;
+  $('l4-bar-stock').style.width = '100%';
+  $('l4-bar-stock').className = 'progress-fill';
+  $('l4-bar-orders').style.width = '0%';
+  clearLog('l4-log');
+  appendLog('l4-log', 'Inventario reseteado.', 'log-dim');
+  setStatus('l4-status', 'READY');
+}
+
+async function runLab4() {
+  const st = parseInt($('l4-stock').value) || 5;
+  const buyers = parseInt($('l4-buyers').value) || 20;
+  lab4 = { stock: st, initial: st, sold: 0 };
+  clearLog('l4-log');
+  $('m4-initial').textContent = st;
+
+  setStatus('l4-status', 'RUNNING', 'badge-warn');
+  appendLog('l4-log', `Stock: ${st} unidades | ${buyers} compradores concurrentes`, 'log-dim');
+
+  const runBuyer = async (id) => {
+    const seen = lab4.stock; // All see the same initial stock
+    await sleep(20 + Math.random() * 40);
+
+    if (seen <= 0) {
+      appendLog('l4-log', `<span class="log-err">COMPRADOR-${id}: sin stock disponible</span>`, '');
+      return;
+    }
+
+    // Race: decrement from what we saw
+    lab4.stock -= 1;
+    lab4.sold++;
+
+    const pct = Math.max(0, lab4.stock / lab4.initial * 100);
+    $('l4-bar-stock').style.width = pct + '%';
+    if (pct < 30) $('l4-bar-stock').className = 'progress-fill danger';
+    else if (pct < 60) $('l4-bar-stock').className = 'progress-fill warn';
+
+    $('l4-bar-orders').style.width = Math.min(100, lab4.sold / lab4.initial * 100) + '%';
+    $('m4-current').textContent = lab4.stock;
+    $('m4-sold').textContent = lab4.sold;
+    $('l4-state-stock').textContent = lab4.stock;
+    $('l4-state-orders').textContent = lab4.sold;
+
+    if (lab4.sold > lab4.initial) {
+      appendLog('l4-log', `<span class="log-err">COMPRADOR-${id}: orden #${lab4.sold} generada — OVERSELL</span>`, '');
+    } else {
+      appendLog('l4-log', `<span class="log-ok">COMPRADOR-${id}: orden #${lab4.sold} generada exitosamente</span>`, '');
+    }
+  };
+
+  await Promise.all(Array.from({length: buyers}, (_, i) => runBuyer(i)));
+
+  const over = lab4.sold - lab4.initial;
+  $('m4-over').textContent = Math.max(0, over);
+
+  if (over > 0) {
+    appendLog('l4-log', `<span class="log-err">OVERSELLING: ${lab4.sold} ordenes con solo ${lab4.initial} unidades en stock</span>`, '');
+    appendLog('l4-log', `Stock final: ${lab4.stock} | Ordenes invalidas: ${over}`, 'log-warn');
+    setStatus('l4-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    appendLog('l4-log', `${lab4.sold} venta(s). No se detecto overselling.`, 'log-ok');
+    setStatus('l4-status', 'OK', 'badge-secure');
+  }
+}
+
+// ═══════════════ LAB 5 — REGISTRO UNICO ═══════════════
+let lab5 = { users: [], sent: 0 };
+
+function resetLab5() {
+  lab5 = { users: [], sent: 0 };
+  $('m5-users').textContent = 0;
+  $('m5-dupes').textContent = 0;
+  $('m5-sent').textContent = 0;
+  $('m5-state').textContent = 'LIMPIA';
+  $('m5-state').className = 'metric-value ok';
+  $('l5-user-table-wrap').style.display = 'none';
+  $('l5-table-body').innerHTML = '';
+  clearLog('l5-log');
+  appendLog('l5-log', 'Base de datos reseteada.', 'log-dim');
+  setStatus('l5-status', 'READY');
+}
+
+async function runLab5() {
+  const username = $('l5-username').value || 'admin_user';
+  const threads = parseInt($('l5-threads').value) || 10;
+  lab5 = { users: [], sent: 0 };
+  clearLog('l5-log');
+  $('l5-user-table-wrap').style.display = 'none';
+
+  setStatus('l5-status', 'RUNNING', 'badge-warn');
+  appendLog('l5-log', `Registrando "${username}" con ${threads} requests concurrentes`, 'log-dim');
+  appendLog('l5-log', `Sin UNIQUE constraint en BD, solo verificacion a nivel de app`, 'log-warn');
+
+  const runRegister = async (id) => {
+    lab5.sent++;
+    $('m5-sent').textContent = lab5.sent;
+
+    // CHECK — does user exist?
+    const exists = lab5.users.some(u => u.username === username);
+    await sleep(30 + Math.random() * 50);
+
+    // USE — insert if not exists (based on what we checked)
+    if (!exists) {
+      const user = {
+        id: lab5.users.length + 1,
+        username,
+        created: ts(),
+        request_id: `REQ-${id}`
+      };
+      lab5.users.push(user);
+      appendLog('l5-log', `<span class="log-ok">REQUEST-${id}: usuario creado (ID: ${user.id})</span>`, '');
+    } else {
+      appendLog('l5-log', `<span class="log-err">REQUEST-${id}: rechazado — username ya existe</span>`, '');
+    }
+
+    $('m5-users').textContent = lab5.users.length;
+    const dupes = lab5.users.filter(u => u.username === username).length - 1;
+    $('m5-dupes').textContent = dupes;
+    if (dupes > 0) {
+      $('m5-state').textContent = 'CORROMPIDA';
+      $('m5-state').className = 'metric-value err';
+    }
+  };
+
+  await Promise.all(Array.from({length: threads}, (_, i) => runRegister(i)));
+
+  // Show table
+  const tbody = $('l5-table-body');
+  tbody.innerHTML = '';
+  lab5.users.forEach(u => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${u.id}</td><td>${u.username}</td><td>${u.created}</td><td>${u.request_id}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('l5-user-table-wrap').style.display = 'block';
+
+  const dupes = lab5.users.filter(u => u.username === username).length;
+  if (dupes > 1) {
+    appendLog('l5-log', `<span class="log-err">VULNERABILIDAD: "${username}" registrado ${dupes} veces</span>`, '');
+    $('l5-integrity-badge').textContent = 'CORROMPIDA';
+    $('l5-integrity-badge').className = 'badge badge-vuln';
+    setStatus('l5-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    $('l5-integrity-badge').textContent = 'INTEGRA';
+    $('l5-integrity-badge').className = 'badge badge-secure';
+    setStatus('l5-status', 'OK', 'badge-secure');
+  }
+}
+
+// ═══════════════ LAB 6 — TRANSFERENCIAS ═══════════════
+let lab6 = { a: 1000, b: 1000, initial: 2000 };
+
+function resetLab6() {
+  const a = parseFloat($('l6-a').value) || 1000;
+  const b = parseFloat($('l6-b').value) || 1000;
+  lab6 = { a, b, initial: a + b };
+  updateLab6UI();
+  clearLog('l6-log');
+  appendLog('l6-log', 'Cuentas reseteadas.', 'log-dim');
+  appendLog('l6-log', `Invariante: A + B = ${fmt(a + b)}`, 'log-dim');
+  setStatus('l6-status', 'READY');
+}
+
+function updateLab6UI() {
+  $('m6-a').textContent = fmt(lab6.a);
+  $('m6-b').textContent = fmt(lab6.b);
+  $('m6-expected').textContent = fmt(lab6.initial);
+  const real = lab6.a + lab6.b;
+  $('m6-real').textContent = fmt(real);
+  $('m6-real').className = 'metric-value ' + (Math.abs(real - lab6.initial) > 0.01 ? 'err' : 'ok');
+
+  const total = lab6.initial || 1;
+  $('l6-state-a').textContent = fmt(lab6.a);
+  $('l6-state-b').textContent = fmt(lab6.b);
+  $('l6-state-total').textContent = fmt(real);
+  $('l6-state-total').className = 'state-val ' + (Math.abs(real - lab6.initial) > 0.01 ? 'vuln' : 'ok');
+  $('l6-bar-a').style.width = Math.max(0, lab6.a / total * 100) + '%';
+  $('l6-bar-b').style.width = Math.max(0, lab6.b / total * 100) + '%';
+  $('l6-bar-total').style.width = Math.min(100, real / total * 100) + '%';
+  if (Math.abs(real - lab6.initial) > 0.01) {
+    $('l6-bar-total').className = 'progress-fill danger';
+  }
+}
+
+async function runLab6() {
+  const a = parseFloat($('l6-a').value) || 1000;
+  const b = parseFloat($('l6-b').value) || 1000;
+  const amount = parseFloat($('l6-amount').value) || 100;
+  const count = parseInt($('l6-count').value) || 20;
+  lab6 = { a, b, initial: a + b };
+  clearLog('l6-log');
+  setStatus('l6-status', 'RUNNING', 'badge-warn');
+  appendLog('l6-log', `Total invariante: ${fmt(a + b)}. Cada transferencia: ${fmt(amount)}`, 'log-dim');
+
+  const runTransfer = async (id) => {
+    const dir = Math.random() > 0.5 ? 'AtoB' : 'BtoA';
+
+    // READ both balances (snapshot)
+    const snapA = lab6.a;
+    const snapB = lab6.b;
+    await sleep(15 + Math.random() * 35);
+
+    // WRITE without re-reading (lost update pattern)
+    if (dir === 'AtoB' && snapA >= amount) {
+      lab6.a = snapA - amount;        // overwrite with stale snapshot
+      lab6.b = snapB + amount;
+      appendLog('l6-log', `<span class="log-info">T-${id}: A→B ${fmt(amount)} | A=${fmt(lab6.a)} B=${fmt(lab6.b)} Total=${fmt(lab6.a+lab6.b)}</span>`, '');
+    } else if (dir === 'BtoA' && snapB >= amount) {
+      lab6.b = snapB - amount;
+      lab6.a = snapA + amount;
+      appendLog('l6-log', `<span class="log-info">T-${id}: B→A ${fmt(amount)} | A=${fmt(lab6.a)} B=${fmt(lab6.b)} Total=${fmt(lab6.a+lab6.b)}</span>`, '');
+    }
+
+    updateLab6UI();
+  };
+
+  await Promise.all(Array.from({length: count}, (_, i) => runTransfer(i)));
+
+  const real = lab6.a + lab6.b;
+  const diff = Math.abs(real - lab6.initial);
+  if (diff > 0.01) {
+    appendLog('l6-log', `<span class="log-err">VULNERABILIDAD: invariante violado. Esperado: ${fmt(lab6.initial)} | Real: ${fmt(real)} | Diferencia: ${fmt(diff)}</span>`, '');
+    setStatus('l6-status', 'VULNERABLE', 'badge-vuln');
+  } else {
+    appendLog('l6-log', `Invariante preservado. Total: ${fmt(real)}`, 'log-ok');
+    setStatus('l6-status', 'OK', 'badge-secure');
+  }
+}
+
+// ═══════════════ INIT ═══════════════
+resetLab1();
+resetLab2();
+resetLab3();
+resetLab4();
+resetLab5();
+resetLab6();
+</script>
+</body>
+</html>
